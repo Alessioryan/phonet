@@ -63,7 +63,7 @@ if __name__=="__main__":
 
             for k in list_phonokeys:
                 Lab[k]=np.stack(Lab[k], axis=0)
-                Lab[k]=np.expand_dims(Lab[k], axis=2)
+                Lab[k]=np.expand_dims(Lab[k], axis=1)  # Alessio changed axis from 2 to 1
             
 
             save={'features': featmat_t, 'labels':Lab}

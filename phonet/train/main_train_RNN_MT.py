@@ -2,11 +2,12 @@ import sys
 from six.moves import cPickle as pickle
 
 from keras.layers import Input, BatchNormalization, Bidirectional, GRU, Permute, Reshape, Lambda, Dense, RepeatVector, multiply, TimeDistributed, Dropout, LSTM
-from keras.utils import np_utils
+from tensorflow.keras.utils import to_categorical  # Alessio updated
 from keras.models import Model
 from keras import optimizers
 import keras.backend as K
-from keras.callbacks import EarlyStopping, ModelCheckpoint, tensorboard_v1
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint  # Alessio removed tensorboard_v1 
+import tensorflow as tf  # Alessio added
 
 import numpy as np
 import os
@@ -63,21 +64,31 @@ def generate_data(directory, batch_size, mu, std):
             ystack2=np.concatenate(ystack, axis=0)
             ystack2=np.hstack(ystack2)
             lab, count=np.unique(ystack2, return_counts=True)
-            class_weights.append(class_weight.compute_class_weight('balanced', np.unique(y[problem]), ystack2))
+            class_weights.append(class_weight.compute_class_weight('balanced', classes=np.unique(y[problem]), y=ystack2))
             weights_t=np.zeros((ystack.shape))
             for j in range(len(lab)):
                 p=np.where(ystack==lab[j])
                 weights_t[p]=class_weights[-1][j]
             weights.append(weights_t[:,:,0])
             if len(lab)>1:
-                y2.append(np_utils.to_categorical(ystack))
+                y2.append(to_categorical(ystack))  # Alessio updated 
             else:
                 da=np.zeros((batch_size,ystack.shape[1], 2))
                 da[:,:,0]=1
                 y2.append(da)
 
-        seq_batch=np.stack(seq_batch, axis=0)
-        yield seq_batch, y2, weights
+        # seq_batch=np.stack(seq_batch, axis=0)
+        # yield seq_batch, y2, weights
+        # Stack and convert seq_batch to a tf.Tensor
+        seq_batch = np.stack(seq_batch, axis=0)
+        seq_batch = tf.convert_to_tensor(seq_batch, dtype=tf.float32)  # Convert to tensor
+
+        y2_tensors = [tf.convert_to_tensor(y_task, dtype=tf.float32) for y_task in y2]
+        weights_tensors = [tf.convert_to_tensor(w_task, dtype=tf.float32) for w_task in weights]
+
+        # Yield the tensors instead of lists
+        yield seq_batch, tuple(y2_tensors), tuple(weights_tensors)
+
 
 
 def generate_data_test(directory, batch_size, mu, std):
@@ -87,13 +98,19 @@ def generate_data_test(directory, batch_size, mu, std):
     while True:
         seq_batch = []
         for b in range(batch_size):
+            if i >= len(file_list):  # Add this guard
+                i = 0  # or optionally: `break` to stop yielding forever
             with open(directory+file_list[i], 'rb') as f:
                 save = pickle.load(f)
             f.close()
-            seq_batch.append((save['features']-mu)/std)
+            if isinstance(save, dict):
+                seq_batch.append((save['features']-mu)/std)
+            else:
+                seq_batch.append((save- mu)/std)
             i+=1
         seq_batch=np.stack(seq_batch, axis=0)
-        yield seq_batch
+        seq_batch = tf.convert_to_tensor(seq_batch, dtype=tf.float32)  # Convert to tensor
+        yield (seq_batch, )
 
 
 
@@ -138,12 +155,12 @@ def DeepArch(input_size, GRU_size, hidden_size, num_labels, names, Learning_rate
         out.append(TimeDistributed(Dense(num_labels[j], activation='softmax'), name=names[j])(xout[-1]))
 
     modelGRU=Model(inputs=input_data, outputs=out)
-    opt=optimizers.Adam(lr=Learning_rate)
+    opt=optimizers.Adam(learning_rate=Learning_rate)  # Alessio updated
     alphas=list(np.ones(len(names))/len(names))
-    modelGRU.compile(optimizer=opt, loss='categorical_crossentropy', metrics=['categorical_accuracy'], sample_weight_mode="temporal", loss_weights=alphas)
+    # modelGRU.compile(optimizer=opt, loss='categorical_crossentropy', metrics=['categorical_accuracy'], sample_weight_mode="temporal", loss_weights=alphas)
+    metrics_dict = {name: 'categorical_accuracy' for name in names}
+    modelGRU.compile(optimizer=opt, loss=['categorical_crossentropy'] * len(names), metrics=metrics_dict, loss_weights=alphas)
     return modelGRU
-
-
 
 
 if __name__=="__main__":
@@ -163,7 +180,7 @@ if __name__=="__main__":
         os.makedirs(file_results)
 
 
-    checkpointer = ModelCheckpoint(filepath=file_results+'weights.hdf5', verbose=1, save_best_only=True)
+    checkpointer = ModelCheckpoint(filepath=file_results+'weights.keras', verbose=1, save_best_only=True)  # Alessio changed hdf5 to keras
 
     #perc=test_labels(file_feat_test)
     #print("perc_classes=", perc)
@@ -187,7 +204,7 @@ if __name__=="__main__":
     num_labels=[2 for j in range(len(keys))]
     Learning_rate=0.0001
     recurrent_droput_prob=0.0
-    epochs=1000
+    epochs=1   # Set this back to 1000 after
     batch_size=64
 
 
@@ -201,9 +218,19 @@ if __name__=="__main__":
         modelPH.load_weights(file_results+'weights.hdf5')
         
     earlystopper = EarlyStopping(monitor='val_loss', patience=15, verbose=0)
-    history=modelPH.fit_generator(generate_data(file_feat_train, batch_size, mu, std), steps_per_epoch=steps_per_epoch, workers=4, use_multiprocessing=True,
-    epochs=epochs, shuffle=True, validation_data=generate_data(file_feat_test, batch_size, mu, std), 
-    verbose=1, callbacks=[earlystopper, checkpointer], validation_steps=validation_steps)
+    history = modelPH.fit(
+        generate_data(file_feat_train, batch_size, mu, std),
+        steps_per_epoch=steps_per_epoch,
+        epochs=epochs,
+        shuffle=True,
+        validation_data=generate_data(file_feat_test, batch_size, mu, std),
+        verbose=1,
+        callbacks=[earlystopper, checkpointer],
+        validation_steps=validation_steps
+    )
+    # history=modelPH.fit_generator(generate_data(file_feat_train, batch_size, mu, std), steps_per_epoch=steps_per_epoch, workers=4, use_multiprocessing=True,
+    # epochs=epochs, shuffle=True, validation_data=generate_data(file_feat_test, batch_size, mu, std), 
+    # verbose=1, callbacks=[earlystopper, checkpointer], validation_steps=validation_steps)
 
     plt.figure()
     plt.plot(np.log(history.history['loss']))
@@ -219,24 +246,26 @@ if __name__=="__main__":
     with open(file_results+"model.json", "w") as json_file:
         json_file.write(model_json)
     try:
-        modelPH.save_weights(file_results+'model.h5')
-    except:
-        print('------------------------------------------------------------------------------------------------------------')
-        print('┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐')
-        print('|                                                                                                           |')
-        print('|      FILE  '+file_results+'.h5'+'                                      |')
-        print('|             could not be saved                                                                            |')
-        print('|                                                                                                           |')
-        print('└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘')
-        print('------------------------------------------------------------------------------------------------------------')
- 
+        # Create directory if needed
+        os.makedirs(file_results, exist_ok=True)
+        
+        # Save full model in modern format
+        modelPH.save(os.path.join(file_results, 'model.keras'))  # TF 2.10+ format
+        
+        # Save architecture separately
+        model_json = modelPH.to_json()
+        with open(os.path.join(file_results, "model_config.json"), "w") as f:
+            f.write(model_json)
+    except Exception as e:
+        print(f"Save failed: {str(e)}") 
 
 
     np.set_printoptions(precision=4)
     batch_size_val=1
     validation_steps=int(Nfiles_test/batch_size_val)
 
-    ypred=modelPH.predict_generator(generate_data_test(file_feat_test, batch_size_val, mu, std), steps=validation_steps)
+    # ypred=modelPH.predict_generator(generate_data_test(file_feat_test, batch_size_val, mu, std), steps=validation_steps)
+    ypred=modelPH.predict(generate_data_test(file_feat_test, batch_size_val, mu, std), steps=validation_steps)
 
     yt=get_test_labels(file_feat_test, batch_size)
 

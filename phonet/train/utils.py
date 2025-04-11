@@ -42,46 +42,39 @@ def test_labels(directory):
 
 
 def get_scaler(directory):
-    i = 0
-    file_list = os.listdir(directory)
-    file_list.sort()
-    seq_sum=np.zeros((40,34))
-    seq_std=np.zeros((40,34))
-    pbar=tqdm(range(len(file_list)))
-    nans=0
-    infs=0
-    for j in pbar:
-        pbar.set_description("Processing %s" % file_list[j])
-        with open(directory+file_list[j], 'rb') as f:
+    file_list = sorted(os.listdir(directory))
+    all_features = []
+    nans = 0
+    infs = 0
+
+    # First pass: collect features
+    for fname in tqdm(file_list, desc="Loading features"):
+        with open(os.path.join(directory, fname), 'rb') as f:
             save = pickle.load(f)
-        f.close()
-        seq=save['features']
-        seq_sum+=seq
-        if np.sum(np.isnan(seq))>0:
-            nans+=1
-        if np.sum(np.isinf(seq))>0:
-            infs+=1
-    N=len(file_list)
-    mu=seq_sum/N
-    
+        seq = save['features']  # Shape: (40, 34)
+
+        if np.isnan(seq).any():
+            nans += 1
+        if np.isinf(seq).any():
+            infs += 1
+
+        all_features.append(seq)
+
+    # Stack all frames across all files → shape: (num_files * 40, 34)
+    all_features = np.vstack(all_features)
+
+    # Compute mean and std across all time steps and files → shape: (34,)
+    mu = np.mean(all_features, axis=0)
+    std = np.std(all_features, axis=0)
+
     print("--------------------------")
-    print("NAN", nans)
-    print("INF", infs)
-    pbar2=tqdm(range(len(file_list)))
-    for j in pbar2:
-        pbar2.set_description("Processing %s" % file_list[j])
-        with open(directory+file_list[j], 'rb') as f:
-            save = pickle.load(f)
-        f.close()
-        seq=save['features']
-        seq_std+=(seq-mu)**2
-
-    std=seq_std/len(file_list)
-
-    find0=np.where(std==0)[0]
-    print("std0", len(find0))
+    print("NAN files:", nans)
+    print("INF files:", infs)
+    print("std == 0 at dimensions:", np.sum(std == 0))
 
     return mu, std
+
+
 
 def plot_confusion_matrix(y_true, y_pred, classes, file_res, 
                           normalize=False,

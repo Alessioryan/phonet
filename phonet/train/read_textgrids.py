@@ -37,7 +37,7 @@ def phoneme2number(phoneme):
 
 def read_textgrid(list_textgrid):
     time_shift=0.01
-    pos_start_phonemes=list_textgrid.index("item[3]:")
+    pos_start_phonemes=list_textgrid.index("item[2]:")  # Alessio changed to item[2] from item[3]
     n_phonemes=int(list_textgrid[pos_start_phonemes+5].replace("intervals:size=",""))
     list_phonemes=[list_textgrid[j] for j in range(pos_start_phonemes+6,len(list_textgrid))]
     Phon=Phonological()
@@ -89,13 +89,23 @@ if __name__=="__main__":
     for j in pbar:
         pbar.set_description("Processing %s" % hf[j])
         f=open(path_textgrid+hf[j], "r")
+        # START ALESSIO ADDED
+        if ".DS_Store" in f.name:
+            continue
+        # END ALESSIO ADDED
         data=f.readlines()
         f.close()
         data2=[]
         for k in range(len(data)):
             datat=data[k].replace(" ","")
             data2.append(datat.replace("\n",""))
-        list_phon, list_labels=read_textgrid(data2)
+        # START ALESSIO ADDED
+        try:
+            list_phon, list_labels=read_textgrid(data2)
+        except ValueError as e:
+            print('Unable to read textgrid file', f.name, ':', e)
+            continue
+        # END ALESSIO ADDED
         #sys.exit()
         file_results=path_labels+hf[j].replace(".TextGrid", ".pickle")
         try:

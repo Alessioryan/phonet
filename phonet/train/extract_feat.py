@@ -17,7 +17,7 @@ def extract_feat(signal,fs):
     signal=signal-np.mean(signal)
     signal=signal/np.max(np.abs(signal))
     Fbank, energy=pyfeat.fbank(signal,samplerate=fs,winlen=size_frame,winstep=time_shift,
-      nfilt=nfilt,nfft=512,lowfreq=0,highfreq=None,preemph=0.97)
+      nfilt=nfilt,nfft=1103,lowfreq=0,highfreq=None,preemph=0.97)  # 1103 changed from 512 to avoid warning
     energy= np.expand_dims(energy, axis=1)
     feat2=np.concatenate((Fbank,energy),axis=1)
     feat2=np.log10(feat2)
