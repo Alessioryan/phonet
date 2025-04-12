@@ -109,3 +109,4 @@ phonet/seq_train/*
 phonet/seq_test/*
 phonet/features/*
 phonet/test/*
+**/.DS_Store  
