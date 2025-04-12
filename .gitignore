@@ -111,3 +111,4 @@ phonet/features/*
 phonet/test/*
 **/.DS_Store  
 phonet/ciempiess_data/*
+phonet/labels/*
