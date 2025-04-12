@@ -100,3 +100,12 @@ venv.bak/
 .mypy_cache/
 #vscode
 .vscode/
+
+
+# Any data files should be ignoreed
+phonet/train_data/*
+phonet/test_data/*
+phonet/seq_train/*
+phonet/seq_test/*
+phonet/features/*
+phonet/test/*
